@@ -26,7 +26,7 @@ data APEG (env :: [(Symbol,*)]) (a :: *) where
   Star :: APEG env a -> APEG env [a]
   Map :: (a -> b) -> APEG env a -> APEG env b
   Atrib :: KnownSymbol s => proxy s -> (a -> APEG env b) -> APEG ('(s,b) ': env) ()
-  Get :: KnownSymbol s => proxy s -> APEG env (s `At` env)
+  Get :: KnownSymbol s => proxy s -> APEG env (s `At` env)       
   Bind :: APEG env a -> (a -> APEG env b) -> APEG env b       
 
 instance Functor (APEG env) where
@@ -68,3 +68,6 @@ atrib = Atrib
 
 get :: KnownSymbol s => proxy s -> APEG env (s `At` env)
 get = Get
+
+check :: KnownSymbol s => proxy s -> ((s `At` env) -> Bool) -> APEG env Bool
+check s f = f <$> Get s         
