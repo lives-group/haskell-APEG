@@ -4,7 +4,8 @@ module Text.APEG.Syntax.APEGSyn where
 
 import Control.Applicative
 import Control.Monad
-    
+
+import Data.Proxy    
 import Data.Singletons.Prelude   
 import Data.Singletons.Prelude.List
 
@@ -63,7 +64,7 @@ star p = Star p
 string :: String -> APEG env String
 string = Symb          
 
-atrib :: KnownSymbol s => proxy s -> (a -> APEG env b) -> APEG ('(s,b) ': env) ()
+atrib :: KnownSymbol s => Proxy s -> (a -> APEG env b) -> APEG ('(s,b) ': env) ()
 atrib = Atrib         
 
 get :: KnownSymbol s => proxy s -> APEG env (s `At` env)
@@ -71,3 +72,15 @@ get = Get
 
 check :: KnownSymbol s => proxy s -> ((s `At` env) -> Bool) -> APEG env Bool
 check s f = f <$> Get s         
+
+
+-- simple test
+            
+foo :: APEG ('("a", Bool) ': env) ()
+foo = Atrib (Proxy :: Proxy "a") (\_ -> pure True)       
+
+      
+faa :: APEG ('("a", Bool) ': env) Bool
+faa = do
+       foo
+       get (Proxy :: Proxy "a")       
