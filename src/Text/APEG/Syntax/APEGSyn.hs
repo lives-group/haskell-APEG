@@ -1,4 +1,4 @@
-{-# LANGUAGE GADTs, DataKinds, PolyKinds, TypeOperators, TypeFamilies #-}
+{-# LANGUAGE GADTs, DataKinds, PolyKinds, TypeOperators, TypeFamilies, ScopedTypeVariables #-}
 
 module Text.APEG.Syntax.APEGSyn where
 
@@ -26,9 +26,9 @@ data APEG (env :: [(Symbol,*)]) (a :: *) where
   Choice :: APEG env a -> APEG env a -> APEG env a
   Star :: APEG env a -> APEG env [a]
   Map :: (a -> b) -> APEG env a -> APEG env b
-  Atrib :: KnownSymbol s => proxy s -> (a -> APEG env b) -> APEG ('(s,b) ': env) ()
+  Atrib :: KnownSymbol s => proxy s -> b -> APEG ('(s,b) ': '[]) ()
   Get :: KnownSymbol s => proxy s -> APEG env (s `At` env)       
-  Bind :: APEG env a -> (a -> APEG env b) -> APEG env b       
+  Bind :: APEG env a -> (a -> APEG env' b) -> APEG (env' :++ env) b       
 
 instance Functor (APEG env) where
     fmap = Map
@@ -41,13 +41,13 @@ instance Alternative (APEG env) where
     (<|>) = Choice
     empty = Failure
 
-instance Monad (APEG env) where
-    return = Success
-    (>>=) = Bind
+-- instance Monad (APEG env) where
+--     return = Success
+--     (>>=) = Bind
 
-instance MonadPlus (APEG env) where
-    mplus = (<|>)
-    mzero = empty        
+-- instance MonadPlus (APEG env) where
+--     mplus = (<|>)
+--     mzero = empty        
             
 chr :: Char -> APEG env Char
 chr = Chr
@@ -64,7 +64,7 @@ star p = Star p
 string :: String -> APEG env String
 string = Symb          
 
-atrib :: KnownSymbol s => Proxy s -> (a -> APEG env b) -> APEG ('(s,b) ': env) ()
+atrib :: KnownSymbol s => Proxy s -> b -> APEG ('(s,b) ': '[]) ()
 atrib = Atrib         
 
 get :: KnownSymbol s => proxy s -> APEG env (s `At` env)
@@ -73,14 +73,24 @@ get = Get
 check :: KnownSymbol s => proxy s -> ((s `At` env) -> Bool) -> APEG env Bool
 check s f = f <$> Get s         
 
+mthen :: APEG env a -> APEG env' b -> APEG (env' :++ env) b
+mthen p q = Bind p (\_ -> q)         
 
--- simple test
+-- simple tests
             
-foo :: APEG ('("a", Bool) ': env) ()
-foo = Atrib (Proxy :: Proxy "a") (\_ -> pure True)       
+foo :: APEG ('("a", Bool) ': '[]) ()
+foo = Atrib (Proxy :: Proxy "a") True       
 
+foo' :: APEG ('("b", Char) ': '[]) ()
+foo' = atrib (Proxy :: Proxy "b") 'a'        
       
-faa :: APEG ('("a", Bool) ': env) Bool
-faa = do
-       foo
-       get (Proxy :: Proxy "a")       
+faa :: APEG ('("b", Char) ': '("a", Bool) ': '[]) Char
+faa = foo `mthen` foo' `mthen` get (Proxy :: Proxy "b")
+
+
+    -- Bind foo
+    --         (Bind (Atrib (Proxy :: Proxy "b") (\_ -> pure True))
+    --               (get (Proxy :: Proxy "a")))
+           
+           
+hh = \ (s :: String) -> Proxy :: Proxy s           
