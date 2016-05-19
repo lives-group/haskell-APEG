@@ -1,4 +1,4 @@
-{-#LANGUAGE DeriveFunctor, FlexibleInstances #-}
+{-#LANGUAGE DeriveFunctor, FlexibleInstances, GADTs #-}
 
 module Text.APEG.Semantics.APEGSem where
 
@@ -7,6 +7,21 @@ import Control.Applicative
 import Control.Monad
 
 import Text.APEG.Syntax.APEGSyn
+
+interp :: PExp env a -> Parser String a
+interp (Sat f) = sat f
+interp (Symb s) = string s
+interp (Success a) = pure a
+interp (Map f p) = f <$> interp p
+interp (Bind p f) = (interp p) >>= interp . f
+interp (Failure s) = fail s
+interp (Not p)
+    = ((try (interp p) *> empty)) <|> pure ()
+interp (Cat p q) = interp p <*> interp q
+interp (Choice p q) = interp p </> interp q
+interp (Star p) = many (interp p)
+                  
+                    
     
 newtype Parser s a = Parser { runParser :: s -> Result s a }
                      deriving Functor
@@ -75,3 +90,16 @@ instance Stream String where
                 (x:xs) -> Commit xs x
                 []     -> Fail "EOF" False
                           
+sat :: Stream c => (Char -> Bool) -> Parser c Char
+sat p = try $ do
+          x <- anyChar
+          x <$ guard (p x)     
+
+char :: Stream c => Char -> Parser c Char
+char c = sat (c ==)
+
+         
+string :: Stream c => String -> Parser c String
+string s = do
+             s' <- replicateM (length s) anyChar
+             s <$ guard (s == s')

@@ -33,7 +33,7 @@ data PExp (env :: [(Symbol, *)]) (a :: *) where
      Star :: PExp env a -> PExp env [a]
      Set :: (KnownSymbol s, Lookup s env ~ 'Just t) => proxy s -> t -> PExp env ()
      Get :: (KnownSymbol s, Lookup s env ~ 'Just t) => proxy s -> PExp env t
-     Check :: (KnownSymbol s, Lookup s env ~ 'Just t) => proxy s -> (t -> Bool) -> PExp env Bool
+     Check :: (KnownSymbol s, Lookup s env ~ 'Just t) => proxy s -> (t -> Bool) -> PExp env ()
 
 newtype APeg (env :: [(Symbol, *)]) (a :: *) = APeg { runApeg :: PExp env a }
 
@@ -73,4 +73,4 @@ number :: PExp env Int
 number = f <$> Star digit
          where
            f = foldl (\a b -> a * 10 + b) 0 . map g
-           g c = ord c - ord '0'
+           g c = ord c - ord '0'                 
