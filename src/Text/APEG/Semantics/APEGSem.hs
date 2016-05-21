@@ -1,14 +1,148 @@
-{-#LANGUAGE DeriveFunctor, FlexibleInstances, GADTs #-}
+{-#LANGUAGE DeriveFunctor, 
+            FlexibleInstances, 
+            GADTs, 
+            TypeFamilies,
+            UndecidableInstances,
+            TypeOperators, 
+            DataKinds,
+            KindSignatures,
+            RankNTypes,
+            ScopedTypeVariables,
+            PolyKinds #-}
 
 module Text.APEG.Semantics.APEGSem where
 
 
 import Control.Applicative
 import Control.Monad
+import Control.Monad.State    
 
+import Data.Proxy
+import Data.Singletons.Decide    
+import Data.Singletons.Prelude    
+import Data.Singletons.Prelude.List
+import Data.Type.Equality    
+    
+import GHC.Exts    
+import GHC.TypeLits
+    
 import Text.APEG.Syntax.APEGSyn
 
-interp :: PExp env a -> Parser String a
+
+-- attribute definition and functions
+    
+data Attr (xs :: [(Symbol,*)]) where
+   Nil  :: Attr '[]
+   (:*) :: (Sing s, t) -> Attr xs -> Attr ('(s , t) ': xs)
+           
+lookupAttr :: (Lookup s env ~ 'Just t) => Sing s -> Attr env -> t
+lookupAttr s ((s',t) :* env')
+    = case s %:== s' of
+        STrue  -> t
+        SFalse -> lookupAttr s env'          
+                  
+updateAttr :: (Update s t env ~ env') => Sing s -> t -> Attr env -> Attr env'
+updateAttr s v Nil = Nil              
+updateAttr s v ((s',v') :* env')
+           = case s %:== s' of
+               STrue  -> (s , v) :* env'
+               SFalse -> (s', v') :* updateAttr s v env'
+
+-- parser definition
+
+newtype Parser s env a = Parser { runParser :: s -> State (Attr env) (Result s a) }
+                     deriving Functor
+
+data Result s a =
+     Pure a            
+   | Commit s a
+   | Fail String Bool  
+   deriving Functor
+
+instance Applicative (Parser s env) where
+    pure v = Parser $ \ _ -> return (Pure v)
+    (Parser pf) <*> (Parser pa)
+                 = Parser $ \ s ->
+                            do
+                              rf <- pf s
+                              case rf of
+                                Pure f -> do
+                                        ra <- pa s
+                                        case ra of
+                                          Pure a -> return (Pure (f a))
+                                          Fail s' _ -> return (Fail s' True)
+                                          Commit d' a -> return (Commit d' (f a))
+                                Fail s b -> return (Fail s b)
+                                Commit d f -> do
+                                        ra <- pa d
+                                        case ra of
+                                          Pure a -> return (Commit d (f a))
+                                          Fail s' _ -> return (Fail s' True)
+                                          Commit d' a -> return (Commit d' (f a))
+                         
+instance Alternative (Parser s env) where
+    (Parser pf) <|> (Parser pa)
+          = Parser $ \ s -> do
+              rf <- pf s
+              case rf of
+                Fail _ False -> pa s
+                x            -> return x
+    empty = Parser $ \ _ -> return (Fail "empty" False)
+
+instance Monad (Parser s env) where
+    return = pure
+    fail s = Parser $ \ _ -> return (Fail s False)
+    (Parser m) >>= k = Parser $ \ s ->
+                          do
+                            r <- m s
+                            case r of
+                              Pure a -> runParser (k a) s
+                              Fail s c -> return (Fail s c)
+                              Commit s' a -> runParser (k a) s'
+
+instance MonadPlus (Parser s env) where
+    mplus = (<|>)
+    mzero = empty
+
+-- basic combinators
+            
+try :: Parser s env a -> Parser s env a
+try (Parser p) = Parser $ \ d -> do
+                     r <- p d
+                     case r of
+                       Fail s _ -> return (Fail s False)
+                       x -> return x
+
+infixl 3 </>
+                           
+(</>) :: Parser s env a -> Parser s env a -> Parser s env a
+p </> q = try p <|> q                           
+
+
+class Stream s where
+   anyChar :: Parser s env Char
+
+instance Stream String where
+   anyChar = Parser $ \ s ->
+              case s of
+                (x:xs) -> return (Commit xs x)
+                []     -> return (Fail "EOF" False)
+                          
+sat :: Stream c => (Char -> Bool) -> Parser c env Char
+sat p = try $ do
+           x <- anyChar
+           x <$ guard (p x)     
+
+char :: Stream c => Char -> Parser c env Char
+char c = sat (c ==)
+
+         
+string :: Stream c => String -> Parser c env String
+string s = do
+            s' <- replicateM (length s) anyChar
+            s <$ guard (s == s')
+            
+interp :: PExp env a -> Parser String env a
 interp (Sat f) = sat f
 interp (Symb s) = string s
 interp (Success a) = pure a
@@ -16,90 +150,19 @@ interp (Map f p) = f <$> interp p
 interp (Bind p f) = (interp p) >>= interp . f
 interp (Failure s) = fail s
 interp (Not p)
-    = ((try (interp p) *> empty)) <|> pure ()
+     = ((try (interp p)) *> empty) <|> pure ()
 interp (Cat p q) = interp p <*> interp q
 interp (Choice p q) = interp p </> interp q
 interp (Star p) = many (interp p)
-                  
-                    
-    
-newtype Parser s a = Parser { runParser :: s -> Result s a }
-                     deriving Functor
-
-data Result s a =
-    Pure a            
-  | Commit s a
-  | Fail String Bool  
-  deriving Functor
-           
-instance Applicative (Parser s) where
-    pure x = Parser $ \ _ -> Pure x
-    Parser pa <*> Parser pb
-        = Parser $ \ s ->
-               case pa s of
-                 Pure f   -> f <$> pb s
-                 Fail s b -> Fail s b
-                 Commit d f ->
-                     case pb s of
-                       Pure a -> Commit d (f a)
-                       Fail s'' _ -> Fail s'' True
-                       Commit d'' a -> Commit d'' (f a)
-           
-instance Alternative (Parser s) where
-    (Parser pf) <|> (Parser pa)
-        = Parser $ \s ->
-              case pf s of
-                Fail _ False -> pa s
-                x            -> x
-    empty = Parser $ \ _ -> Fail "empty" False
-
-instance Monad (Parser s) where
-    return = pure
-    (Parser m) >>= k = Parser $ \ d -> case m d of
-                                         Pure a -> runParser (k a) d
-                                         Commit d' a ->
-                                             case runParser (k a) d' of
-                                               Pure b -> Commit d' b
-                                               Fail s _ -> Fail s True
-                                               comm     -> comm
-                                         Fail s c -> Fail s c
-    fail s = Parser $ \ _ -> Fail s False
-
-instance MonadPlus (Parser s) where
-    mplus = (<|>)
-    mzero = empty
-
-try :: Parser s a -> Parser s a
-try (Parser p) = Parser $ \ d ->
-                    case p d of
-                      Fail s _ -> Fail s False
-                      x -> x
-
-infixl 3 </>
-                           
-(</>) :: Parser s a -> Parser s a -> Parser s a
-p </> q = try p <|> q                           
-
-
-class Stream s where
-    anyChar :: Parser s Char
-
-instance Stream String where
-    anyChar = Parser $ \s ->
-              case s of
-                (x:xs) -> Commit xs x
-                []     -> Fail "EOF" False
-                          
-sat :: Stream c => (Char -> Bool) -> Parser c Char
-sat p = try $ do
-          x <- anyChar
-          x <$ guard (p x)     
-
-char :: Stream c => Char -> Parser c Char
-char c = sat (c ==)
-
+interp (Get s) = Parser $ \ _ -> gets (lookupAttr s) >>= return . Pure                  
+{-interp (Set s v _) = Parser $ \ _ ->
+                        do
+                           modify (updateAttr s v)
+                           return (Pure ())       -}
+interp (Check s p) = Parser $ \ _ ->
+                        do
+                          v <- gets (lookupAttr s)
+                          if p v then return (Pure ())
+                             else fail "attribute"
          
-string :: Stream c => String -> Parser c String
-string s = do
-             s' <- replicateM (length s) anyChar
-             s <$ guard (s == s')
+                

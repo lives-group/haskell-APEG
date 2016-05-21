@@ -16,9 +16,9 @@ import Data.Proxy
 import Data.Singletons.Prelude   
 import Data.Singletons.Prelude.List
 
-import GHC.Exts    
-import GHC.TypeLits
-
+type family Update (x :: k) (s :: v) (xs :: [(k, v)]) :: [(k,v)] where
+  Update x s '[] = '[]
+  Update x s ('(x' , v) ': xs) = If (x :== x')  ('(x,s) ': xs) ('(x', v) ': Update x s xs)    
 
 data PExp (env :: [(Symbol, *)]) (a :: *) where
      Sat  :: (Char -> Bool) -> PExp env Char
@@ -31,9 +31,9 @@ data PExp (env :: [(Symbol, *)]) (a :: *) where
      Cat :: PExp env (a -> b) -> PExp env a -> PExp env b
      Choice :: PExp env a -> PExp env a -> PExp env a
      Star :: PExp env a -> PExp env [a]
-     Set :: (KnownSymbol s, Lookup s env ~ 'Just t) => proxy s -> t -> PExp env ()
-     Get :: (KnownSymbol s, Lookup s env ~ 'Just t) => proxy s -> PExp env t
-     Check :: (KnownSymbol s, Lookup s env ~ 'Just t) => proxy s -> (t -> Bool) -> PExp env ()
+     Set :: (Update s t env ~ env') => Sing s -> t -> Proxy env -> PExp env' ()
+     Get :: (Lookup s env ~ 'Just t) => Sing s -> PExp env t
+     Check :: (Lookup s env ~ 'Just t) => Sing s -> (t -> Bool) -> PExp env ()
 
 newtype APeg (env :: [(Symbol, *)]) (a :: *) = APeg { runApeg :: PExp env a }
 
@@ -55,14 +55,14 @@ instance Monad (PExp env) where
     
 
 foo :: PExp '[ '("a", Bool), '("b", Char)] ()
-foo = Set (Proxy :: Proxy "a") True       
+foo = Set (sing :: Sing "a") True (Proxy :: Proxy '[ '("a", k), '("b", k)])
 
 foo' :: PExp '[ '("a", Bool), '("b", Char)] ()
-foo' = Set (Proxy :: Proxy "b") 'a'       
+foo' = Set (sing :: Sing "b") 'a' (Proxy :: Proxy '[ '("a", k), '("b", k)])
 
       
 mytest1 :: APeg '[ '("a", Bool), '("b", Char)] Char      
-mytest1 = APeg (((\_ _ c -> c) <$> foo <*> foo' <*> Get (Proxy :: Proxy "b")))
+mytest1 = APeg (((\_ _ c -> c) <$> foo <*> foo' <*> Get (sing :: Sing "b")))
 
 -- more tests
 
