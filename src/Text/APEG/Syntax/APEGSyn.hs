@@ -18,7 +18,7 @@ import Data.Singletons.Prelude.List
 
 type family Update (x :: k) (s :: v) (xs :: [(k, v)]) :: [(k,v)] where
   Update x s '[] = '[]
-  Update x s ('(x' , v) ': xs) = If (x :== x')  ('(x,s) ': xs) ('(x', v) ': Update x s xs)    
+  Update x s ('(x' , v) ': xs) = If ((x :== x') :&& (s :== v)) ('(x,s) ': xs) ('(x', v) ': Update x s xs)    
 
 data PExp (env :: [(Symbol, *)]) (a :: *) where
      Sat  :: (Char -> Bool) -> PExp env Char
@@ -31,7 +31,7 @@ data PExp (env :: [(Symbol, *)]) (a :: *) where
      Cat :: PExp env (a -> b) -> PExp env a -> PExp env b
      Choice :: PExp env a -> PExp env a -> PExp env a
      Star :: PExp env a -> PExp env [a]
-     Set :: (Update s t env ~ env') => Sing s -> t -> Proxy env -> PExp env' ()
+     Set :: (Lookup s env ~ 'Just t) => Sing s -> t -> PExp env ()
      Get :: (Lookup s env ~ 'Just t) => Sing s -> PExp env t
      Check :: (Lookup s env ~ 'Just t) => Sing s -> (t -> Bool) -> PExp env ()
 
@@ -55,10 +55,10 @@ instance Monad (PExp env) where
     
 
 foo :: PExp '[ '("a", Bool), '("b", Char)] ()
-foo = Set (sing :: Sing "a") True (Proxy :: Proxy '[ '("a", k), '("b", k)])
+foo = Set (sing :: Sing "a") True 
 
 foo' :: PExp '[ '("a", Bool), '("b", Char)] ()
-foo' = Set (sing :: Sing "b") 'a' (Proxy :: Proxy '[ '("a", k), '("b", k)])
+foo' = Set (sing :: Sing "b") 'a' 
 
       
 mytest1 :: APeg '[ '("a", Bool), '("b", Char)] Char      

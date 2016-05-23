@@ -6,17 +6,17 @@
             TypeOperators, 
             DataKinds,
             KindSignatures,
-            RankNTypes,
             ScopedTypeVariables,
             PolyKinds #-}
 
 module Text.APEG.Semantics.APEGSem where
 
+import Prelude hiding ((>>=), (>>), return, fail)
 
 import Control.Applicative
 import Control.Monad
 import Control.Monad.State    
-
+    
 import Data.Proxy
 import Data.Singletons.Decide    
 import Data.Singletons.Prelude    
@@ -41,11 +41,10 @@ lookupAttr s ((s',t) :* env')
         STrue  -> t
         SFalse -> lookupAttr s env'          
                   
-updateAttr :: (Update s t env ~ env') => Sing s -> t -> Attr env -> Attr env'
-updateAttr s v Nil = Nil              
+updateAttr :: (Lookup s env ~ 'Just t) => Sing s -> t -> Attr env -> Attr env
 updateAttr s v ((s',v') :* env')
            = case s %:== s' of
-               STrue  -> (s , v) :* env'
+               STrue  -> (s', v) :* env'
                SFalse -> (s', v') :* updateAttr s v env'
 
 -- parser definition
@@ -53,11 +52,12 @@ updateAttr s v ((s',v') :* env')
 newtype Parser s env a = Parser { runParser :: s -> State (Attr env) (Result s a) }
                      deriving Functor
 
-data Result s a =
-     Pure a            
-   | Commit s a
-   | Fail String Bool  
-   deriving Functor
+data Result s a
+    = Pure a
+    | Commit s a
+    | Fail String Bool
+      deriving Functor
+
 
 instance Applicative (Parser s env) where
     pure v = Parser $ \ _ -> return (Pure v)
@@ -141,7 +141,9 @@ string :: Stream c => String -> Parser c env String
 string s = do
             s' <- replicateM (length s) anyChar
             s <$ guard (s == s')
-            
+
+-- semantics of parsing expressions
+              
 interp :: PExp env a -> Parser String env a
 interp (Sat f) = sat f
 interp (Symb s) = string s
@@ -150,19 +152,17 @@ interp (Map f p) = f <$> interp p
 interp (Bind p f) = (interp p) >>= interp . f
 interp (Failure s) = fail s
 interp (Not p)
-     = ((try (interp p)) *> empty) <|> pure ()
+     = (try (interp p) *> empty) <|> pure ()
 interp (Cat p q) = interp p <*> interp q
 interp (Choice p q) = interp p </> interp q
 interp (Star p) = many (interp p)
 interp (Get s) = Parser $ \ _ -> gets (lookupAttr s) >>= return . Pure                  
-{-interp (Set s v _) = Parser $ \ _ ->
+interp (Set s v) = Parser $ \ _ ->
                         do
                            modify (updateAttr s v)
-                           return (Pure ())       -}
+                           return (Pure ())       
 interp (Check s p) = Parser $ \ _ ->
                         do
                           v <- gets (lookupAttr s)
                           if p v then return (Pure ())
-                             else fail "attribute"
-         
-                
+                             else fail "attribute"             
