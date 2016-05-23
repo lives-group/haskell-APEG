@@ -35,7 +35,7 @@ data PExp (env :: [(Symbol, *)]) (a :: *) where
      Get :: (Lookup s env ~ 'Just t) => Sing s -> PExp env t
      Check :: (Lookup s env ~ 'Just t) => Sing s -> (t -> Bool) -> PExp env ()
 
-newtype APeg (env :: [(Symbol, *)]) (a :: *) = APeg { runApeg :: PExp env a }
+newtype APeg (env :: [(Symbol, *)]) (a :: *) = APeg { runApeg :: PExp ('("lang", PExp env a) ': env) a }
 
 instance Functor (PExp env) where
     fmap = Map
@@ -54,10 +54,10 @@ instance Monad (PExp env) where
     fail = Failure
     
 
-foo :: PExp '[ '("a", Bool), '("b", Char)] ()
+foo :: PExp '[ '("lang", PExp '[ '("a", Bool), '("b", Char)] a), '("a", Bool), '("b", Char)] ()
 foo = Set (sing :: Sing "a") True 
 
-foo' :: PExp '[ '("a", Bool), '("b", Char)] ()
+foo' :: PExp '[ '("lang", PExp '[ '("a", Bool), '("b", Char)] a),'("a", Bool), '("b", Char)] ()
 foo' = Set (sing :: Sing "b") 'a' 
 
       
