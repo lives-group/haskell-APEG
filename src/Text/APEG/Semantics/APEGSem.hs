@@ -48,6 +48,17 @@ updateAttr s v ((s',v') :* env')
                STrue  -> (s', v) :* env'
                SFalse -> (s', v') :* updateAttr s v env'
 
+instance Show (Attr '[]) where
+    show Nil = ""
+
+instance (Show (Attr env), Cond Show env, Show t) => Show (Attr ('(s,t) ': env)) where
+    show ((s,t) :* env) = concat [ fromSing s
+                                 , "+->"
+                                 , show t
+                                 , ","
+                                 , show env
+                                 ] 
+                         
 -- parser definition
 
 newtype Parser s env a = Parser { runParser :: s -> State (Attr env) (Result s a) }
@@ -57,7 +68,7 @@ data Result s a
     = Pure a
     | Commit s a
     | Fail String Bool
-      deriving Functor
+      deriving (Functor, Show)
 
 
 instance Applicative (Parser s env) where
@@ -202,14 +213,8 @@ instance (Default a, Default b, Default c) => Default (a,b,c) where
 instance (Default a, Default b, Default c, Default d) => Default (a,b,c,d) where
     value = (value, value, value, value)
 
-instance Default (PExp env a) where
-    value = empty
-
 instance Default (Maybe a) where
     value = Nothing
-            
-class (f (g x)) => (f `Compose` g) x
-instance (f (g x)) => (f `Compose` g) x    
             
 type family Cond (k :: * -> Constraint)(xs :: [(Symbol,*)]) :: Constraint where
     Cond k '[] = ()

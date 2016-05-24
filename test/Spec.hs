@@ -10,6 +10,7 @@
 
 
 import Text.APEG.Syntax.APEGSyn
+import Text.APEG.Semantics.APEGSem    
 import Control.Applicative
     
 import Data.Char    
@@ -18,10 +19,10 @@ import Data.Singletons.Prelude
 import Data.Singletons.Prelude.List
     
 
-foo :: PExp '[ '("lang", PExp '[ '("a", Bool), '("b", Char)] a), '("a", Bool), '("b", Char)] ()
+foo :: PExp '[ '("a", Bool), '("b", Char)] ()
 foo = Set (sing :: Sing "a") True 
 
-foo' :: PExp '[ '("lang", PExp '[ '("a", Bool), '("b", Char)] a),'("a", Bool), '("b", Char)] ()
+foo' :: PExp '[ '("a", Bool), '("b", Char)] ()
 foo' = Set (sing :: Sing "b") 'a' 
 
       
@@ -42,4 +43,8 @@ number = f <$> Star digit
 
 
 main :: IO ()
-main = putStrLn "Test suite not yet implemented"
+main = do
+         let
+           (r,att) = runAPEG mytest1 "ab"
+         putStrLn $ show att
+         print r         
