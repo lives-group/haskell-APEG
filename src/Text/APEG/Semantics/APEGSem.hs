@@ -7,7 +7,9 @@
             DataKinds,
             KindSignatures,
             ScopedTypeVariables,
-            PolyKinds #-}
+            PolyKinds,
+            MultiParamTypeClasses,
+            ConstraintKinds #-}
 
 module Text.APEG.Semantics.APEGSem where
 
@@ -16,11 +18,10 @@ import Prelude hiding ((>>=), (>>), return, fail)
 import Control.Applicative
 import Control.Monad
 import Control.Monad.State    
-    
-import Data.Proxy
-import Data.Singletons.Decide    
-import Data.Singletons.Prelude    
-import Data.Singletons.Prelude.List
+
+import Data.Proxy    
+import Data.Singletons.Prelude hiding (All, Snd)   
+import Data.Singletons.Prelude.List hiding (All)
 import Data.Type.Equality    
     
 import GHC.Exts    
@@ -169,6 +170,56 @@ interp (Check s p) = Parser $ \ _ ->
             
 -- running an APEG parser
 
-runAPEG :: Stream s => APEG env a -> s -> (Result s a, Attr ('("lang", PExp env a) ': env))
-runAPEG apeg s = runState (runParser (interp (runApeg apeg)) s) undefined
+runAPEG :: (Stream s, Cond Default env, Initial env) => APEG env a -> s -> (Result s a, Attr env)
+runAPEG apeg s = runState (runParser (interp (runApeg apeg)) s) (initial (Proxy :: Proxy env))
                
+-- building initial environment
+
+class Default a where
+    value :: a
+
+instance Default Char where
+    value = ' '
+
+instance Default Int where
+    value = 0
+
+instance Default Integer where
+    value = 0
+            
+instance Default Bool where
+    value = False
+
+instance Default a => Default [a] where
+    value = []
+
+instance (Default a, Default b) => Default (a,b) where
+    value = (value, value)
+
+instance (Default a, Default b, Default c) => Default (a,b,c) where
+    value = (value, value, value)
+            
+instance (Default a, Default b, Default c, Default d) => Default (a,b,c,d) where
+    value = (value, value, value, value)
+
+instance Default (PExp env a) where
+    value = empty
+
+instance Default (Maybe a) where
+    value = Nothing
+            
+class (f (g x)) => (f `Compose` g) x
+instance (f (g x)) => (f `Compose` g) x    
+            
+type family Cond (k :: * -> Constraint)(xs :: [(Symbol,*)]) :: Constraint where
+    Cond k '[] = ()
+    Cond k ('(s,x) ': xs) = (k x, Cond k xs)
+    
+class Initial (env :: [(Symbol,*)]) where
+    initial :: (Cond Default env) => proxy env -> Attr env
+
+instance Initial '[] where
+    initial _ = Nil
+
+instance (SingI s, Default t, Initial env) => Initial ('(s,t) ': env) where
+    initial _ = (sing , value) :* initial (Proxy :: Proxy env) 

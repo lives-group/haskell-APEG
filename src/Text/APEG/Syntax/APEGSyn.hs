@@ -12,7 +12,6 @@ module Text.APEG.Syntax.APEGSyn where
 import Control.Applicative
     
 import Data.Char    
-import Data.Proxy    
 import Data.Singletons.Prelude   
 import Data.Singletons.Prelude.List
 
@@ -31,7 +30,7 @@ data PExp (env :: [(Symbol, *)]) (a :: *) where
      Get :: (Lookup s env ~ 'Just t) => Sing s -> PExp env t
      Check :: (Lookup s env ~ 'Just t) => Sing s -> (t -> Bool) -> PExp env ()
 
-newtype APEG (env :: [(Symbol, *)]) (a :: *) = APEG { runApeg :: PExp ('("lang", PExp env a) ': env) a }
+newtype APEG (env :: [(Symbol, *)]) (a :: *) = APEG { runApeg :: PExp env a }
 
 instance Functor (PExp env) where
     fmap = Map
