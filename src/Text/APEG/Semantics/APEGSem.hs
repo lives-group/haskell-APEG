@@ -144,7 +144,7 @@ string s = do
 
 -- semantics of parsing expressions
               
-interp :: PExp env a -> Parser String env a
+interp :: Stream c => PExp env a -> Parser c env a
 interp (Sat f) = sat f
 interp (Symb s) = string s
 interp (Success a) = pure a
@@ -166,3 +166,9 @@ interp (Check s p) = Parser $ \ _ ->
                           v <- gets (lookupAttr s)
                           if p v then return (Pure ())
                              else fail "attribute"             
+            
+-- running an APEG parser
+
+runAPEG :: Stream s => APEG env a -> s -> (Result s a, Attr ('("lang", PExp env a) ': env))
+runAPEG apeg s = runState (runParser (interp (runApeg apeg)) s) undefined
+               

@@ -16,10 +16,6 @@ import Data.Proxy
 import Data.Singletons.Prelude   
 import Data.Singletons.Prelude.List
 
-type family Update (x :: k) (s :: v) (xs :: [(k, v)]) :: [(k,v)] where
-  Update x s '[] = '[]
-  Update x s ('(x' , v) ': xs) = If ((x :== x') :&& (s :== v)) ('(x,s) ': xs) ('(x', v) ': Update x s xs)    
-
 data PExp (env :: [(Symbol, *)]) (a :: *) where
      Sat  :: (Char -> Bool) -> PExp env Char
      Symb :: String -> PExp env String
@@ -35,7 +31,7 @@ data PExp (env :: [(Symbol, *)]) (a :: *) where
      Get :: (Lookup s env ~ 'Just t) => Sing s -> PExp env t
      Check :: (Lookup s env ~ 'Just t) => Sing s -> (t -> Bool) -> PExp env ()
 
-newtype APeg (env :: [(Symbol, *)]) (a :: *) = APeg { runApeg :: PExp ('("lang", PExp env a) ': env) a }
+newtype APEG (env :: [(Symbol, *)]) (a :: *) = APEG { runApeg :: PExp ('("lang", PExp env a) ': env) a }
 
 instance Functor (PExp env) where
     fmap = Map
@@ -54,23 +50,3 @@ instance Monad (PExp env) where
     fail = Failure
     
 
-foo :: PExp '[ '("lang", PExp '[ '("a", Bool), '("b", Char)] a), '("a", Bool), '("b", Char)] ()
-foo = Set (sing :: Sing "a") True 
-
-foo' :: PExp '[ '("lang", PExp '[ '("a", Bool), '("b", Char)] a),'("a", Bool), '("b", Char)] ()
-foo' = Set (sing :: Sing "b") 'a' 
-
-      
-mytest1 :: APeg '[ '("a", Bool), '("b", Char)] Char      
-mytest1 = APeg (((\_ _ c -> c) <$> foo <*> foo' <*> Get (sing :: Sing "b")))
-
--- more tests
-
-digit :: PExp env Char
-digit = Sat isDigit         
-
-number :: PExp env Int
-number = f <$> Star digit
-         where
-           f = foldl (\a b -> a * 10 + b) 0 . map g
-           g c = ord c - ord '0'                 
