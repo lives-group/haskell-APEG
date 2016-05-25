@@ -10,7 +10,7 @@
 
 
 import Text.APEG.Syntax.APEGSyn
-import Text.APEG.Semantics.APEGSem    
+import qualified Text.APEG.Semantics.APEGSem as Sem
 import Control.Applicative
     
 import Data.Char    
@@ -38,13 +38,26 @@ number :: PExp env Int
 number = f <$> Star digit
          where
            f = foldl (\a b -> a * 10 + b) 0 . map g
-           g c = ord c - ord '0'                 
+           g c = ord c - ord '0'
+                 
+pb :: PExp '[ '("x0", Int), '("x1", Int)] ()
+pb = pz <|> po
+     where
+       pz, po :: PExp '[ '("x0", Int), '("x1", Int)] ()
+       pz = char '0' *> (set (sing :: Sing "x1") 1)
+       po = char '1' *> (set (sing :: Sing "x1") 1)
+       char c = sat (c ==)       
 
+pt :: PExp '[ '("x0", Int), '("x1", Int)] ()
+pt = pb <* star pb      
+                
 
-
+ps :: PExp '[ '("x0", Int), '("x1", Int)] ()
+ps = pt      
+     
 main :: IO ()
 main = do
          let
-           (r,att) = runAPEG mytest1 "ab"
+           (r,att) = Sem.runAPEG mytest1 "ab"
          putStrLn $ show att
          print r         

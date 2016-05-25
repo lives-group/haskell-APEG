@@ -48,4 +48,25 @@ instance Monad (PExp env) where
     (>>=) = Bind
     fail = Failure
     
+-- smart constructors
 
+sat :: (Char -> Bool) -> PExp env Char
+sat = Sat
+
+symbol :: String -> PExp env String
+symbol = Symb
+
+star :: PExp env a -> PExp env [a]
+star = Star        
+
+neg :: PExp env a -> PExp env ()
+neg = Not
+
+set :: (Lookup s env ~ 'Just t) => Sing s -> t -> PExp env ()
+set = Set       
+
+get :: (Lookup s env ~ 'Just t) => Sing s -> PExp env t
+get = Get
+
+check :: (Lookup s env ~ 'Just t) => Sing s -> (t -> Bool) -> PExp env ()
+check = Check         

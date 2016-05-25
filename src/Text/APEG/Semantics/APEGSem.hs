@@ -50,7 +50,7 @@ updateAttr s v ((s',v') :* env')
 
 instance Show (Attr '[]) where
     show Nil = ""
-
+               
 instance (Show (Attr env), Cond Show env, Show t) => Show (Attr ('(s,t) ': env)) where
     show ((s,t) :* env) = concat [ fromSing s
                                  , "+->"
@@ -140,13 +140,13 @@ instance Stream String where
                 (x:xs) -> return (Commit xs x)
                 []     -> return (Fail "EOF" False)
                           
-sat :: Stream c => (Char -> Bool) -> Parser c env Char
-sat p = try $ do
+satsem :: Stream c => (Char -> Bool) -> Parser c env Char
+satsem p = try $ do
            x <- anyChar
            x <$ guard (p x)     
 
 char :: Stream c => Char -> Parser c env Char
-char c = sat (c ==)
+char c = satsem (c ==)
 
          
 string :: Stream c => String -> Parser c env String
@@ -157,7 +157,7 @@ string s = do
 -- semantics of parsing expressions
               
 interp :: Stream c => PExp env a -> Parser c env a
-interp (Sat f) = sat f
+interp (Sat f) = satsem f
 interp (Symb s) = string s
 interp (Success a) = pure a
 interp (Map f p) = f <$> interp p
