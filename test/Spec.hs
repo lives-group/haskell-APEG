@@ -49,7 +49,7 @@ pb = pz <|> po
        char c = sat (c ==)       
 
 pt :: PExp '[ '("x0", Int), '("x1", Int)] ()
-pt = pb <* star pb      
+pt = pb <*> get (sing :: Sing "x0") <*> star pb      
                 
 
 ps :: PExp '[ '("x0", Int), '("x1", Int)] ()

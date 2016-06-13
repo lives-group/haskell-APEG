@@ -8,6 +8,7 @@
             KindSignatures,
             ScopedTypeVariables,
             PolyKinds,
+            RankNTypes,
             MultiParamTypeClasses,
             ConstraintKinds #-}
 
@@ -15,53 +16,20 @@ module Text.APEG.Semantics.APEGSem where
 
 import Prelude hiding ((>>=), (>>), return, fail)
 
+import Data.Map (Map)
+import qualified Data.Map as Map
+
 import Control.Applicative
-import Control.Monad
-import Control.Monad.State    
+import Control.Monad 
+import Control.Monad.State
 
-import Data.Proxy    
-import Data.Singletons.Prelude hiding (All, Snd)   
-import Data.Singletons.Prelude.List hiding (All)
-import Data.Type.Equality    
-    
-import GHC.Exts    
 import GHC.TypeLits
-    
+
 import Text.APEG.Syntax.APEGSyn
-
-
--- attribute definition and functions
-    
-data Attr (xs :: [(Symbol,*)]) where
-   Nil  :: Attr '[]
-   (:*) :: (Sing s, t) -> Attr xs -> Attr ('(s , t) ': xs)
-           
-lookupAttr :: (Lookup s env ~ 'Just t) => Sing s -> Attr env -> t
-lookupAttr s ((s',t) :* env')
-    = case s %:== s' of
-        STrue  -> t
-        SFalse -> lookupAttr s env'          
-                  
-updateAttr :: (Lookup s env ~ 'Just t) => Sing s -> t -> Attr env -> Attr env
-updateAttr s v ((s',v') :* env')
-           = case s %:== s' of
-               STrue  -> (s', v) :* env'
-               SFalse -> (s', v') :* updateAttr s v env'
-
-instance Show (Attr '[]) where
-    show Nil = ""
-               
-instance (Show (Attr env), Cond Show env, Show t) => Show (Attr ('(s,t) ': env)) where
-    show ((s,t) :* env) = concat [ fromSing s
-                                 , "+->"
-                                 , show t
-                                 , ","
-                                 , show env
-                                 ] 
                          
 -- parser definition
 
-newtype Parser s env a = Parser { runParser :: s -> State (Attr env) (Result s a) }
+newtype Parser s env a = Parser { runParser :: s -> State ([(Symbol, (Env PExp env env))]) (Result s a) }
                      deriving Functor
 
 data Result s a
@@ -155,76 +123,30 @@ string s = do
             s <$ guard (s == s')
 
 -- semantics of parsing expressions
+
+interpPEG :: Stream c => PEG a -> Parser c env a
+interpPEG (PEG s env) = undefined
               
-interp :: Stream c => PExp env a -> Parser c env a
-interp (Sat f) = satsem f
-interp (Symb s) = string s
-interp (Success a) = pure a
-interp (Map f p) = f <$> interp p
-interp (Bind p f) = (interp p) >>= interp . f
-interp (Failure s) = fail s
-interp (Not p)
-     = (try (interp p) *> empty) <|> pure ()
-interp (Cat p q) = interp p <*> interp q
-interp (Choice p q) = interp p </> interp q
-interp (Star p) = many (interp p)
-interp (Get s) = Parser $ \ _ -> gets (lookupAttr s) >>= return . Pure                  
-interp (Set s v) = Parser $ \ _ ->
-                        do
-                           modify (updateAttr s v)
-                           return (Pure ())       
-interp (Check s p) = Parser $ \ _ ->
-                        do
-                          v <- gets (lookupAttr s)
-                          if p v then return (Pure ())
-                             else fail "attribute"             
-            
--- running an APEG parser
+interpPExp :: Stream c => PExp env a -> Parser c env a
+interpPExp (Symb s) = interpSym s
+interpPExp (Cat e e') = interpPExp e <*> interpPExp e'
+interpPExp (Choice e e') = interpPExp e <|> interpPExp e'
+interpPExp (Neg e) =  ((try (interpPExp e)) *> fail "not") <|> return ()
+interpPExp (Star e) = many (interpPExp e)
+interpPExp (Map f e) = f <$> interpPExp e
+interpPExp (Bind f e)
+  = do
+     v <- interpPExp f
+     interpPExp (e v)
+interpPExp (Success v) = return v
+interpPExp (Error s) = fail s
 
-runAPEG :: (Stream s, Cond Default env, Initial env) => APEG env a -> s -> (Result s a, Attr env)
-runAPEG apeg s = runState (runParser (interp (runApeg apeg)) s) (initial (Proxy :: Proxy env))
-               
--- building initial environment
+interpSym :: Stream c => Sym env a -> Parser c env a
+interpSym (Term s) = string s
+interpSym (NonTerm r)
+  = Parser (\ s -> do
+               e <- gets (lookupEnv r . snd . head)
+               runParser (interpPExp e) s)
 
-class Default a where
-    value :: a
+-- modification API
 
-instance Default Char where
-    value = ' '
-
-instance Default Int where
-    value = 0
-
-instance Default Integer where
-    value = 0
-            
-instance Default Bool where
-    value = False
-
-instance Default a => Default [a] where
-    value = []
-
-instance (Default a, Default b) => Default (a,b) where
-    value = (value, value)
-
-instance (Default a, Default b, Default c) => Default (a,b,c) where
-    value = (value, value, value)
-            
-instance (Default a, Default b, Default c, Default d) => Default (a,b,c,d) where
-    value = (value, value, value, value)
-
-instance Default (Maybe a) where
-    value = Nothing
-            
-type family Cond (k :: * -> Constraint)(xs :: [(Symbol,*)]) :: Constraint where
-    Cond k '[] = ()
-    Cond k ('(s,x) ': xs) = (k x, Cond k xs)
-    
-class Initial (env :: [(Symbol,*)]) where
-    initial :: (Cond Default env) => proxy env -> Attr env
-
-instance Initial '[] where
-    initial _ = Nil
-
-instance (SingI s, Default t, Initial env) => Initial ('(s,t) ': env) where
-    initial _ = (sing , value) :* initial (Proxy :: Proxy env) 
