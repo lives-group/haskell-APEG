@@ -1,16 +1,8 @@
 {-#LANGUAGE DeriveFunctor, 
-            FlexibleInstances, 
-            GADTs, 
-            TypeFamilies,
-            UndecidableInstances,
-            TypeOperators, 
-            DataKinds,
-            KindSignatures,
+            FlexibleInstances,
             ScopedTypeVariables,
-            PolyKinds,
             RankNTypes,
-            MultiParamTypeClasses,
-            ConstraintKinds #-}
+            GADTs #-}
 
 module Text.APEG.Semantics.APEGSem where
 
@@ -21,22 +13,35 @@ import qualified Data.Map as Map
 
 import Control.Applicative
 import Control.Monad 
-import Control.Monad.State
+import Control.Monad.Reader
 
 import GHC.TypeLits
 
 import Text.APEG.Syntax.APEGSyn
                          
--- parser definition
+-- A simple parser library that keeps the PEG as internal state
 
-newtype Parser s env a = Parser { runParser :: s -> State ([(Symbol, (Env PExp env env))]) (Result s a) }
-                     deriving Functor
+data PState env = PState {
+                   current  :: forall b. PEG env b
+                ,  syntaxes :: forall b c env'. Map String (PEG env b -> PEG env' c)
+                }
+
+data Parser s env a = Parser { runParser :: s -> Reader (PState env) (Result s a) }
 
 data Result s a
     = Pure a
     | Commit s a
     | Fail String Bool
       deriving (Functor, Show)
+
+instance Functor (Parser s env) where
+  fmap f p = Parser (\s ->
+                      do
+                        r <- runParser p s
+                        case r of
+                          Pure a -> return (Pure (f a))
+                          Fail s b -> return (Fail s b)
+                          Commit s a -> return (Commit s (f a)))
 
 
 instance Applicative (Parser s env) where
@@ -124,8 +129,8 @@ string s = do
 
 -- semantics of parsing expressions
 
-interpPEG :: Stream c => PEG a -> Parser c env a
-interpPEG (PEG s env) = undefined
+interpPEG :: Stream c => PEG env a -> Parser c env a
+interpPEG (PEG s env) = interpPExp (lookupEnv s env)
               
 interpPExp :: Stream c => PExp env a -> Parser c env a
 interpPExp (Symb s) = interpSym s
@@ -145,8 +150,16 @@ interpSym :: Stream c => Sym env a -> Parser c env a
 interpSym (Term s) = string s
 interpSym (NonTerm r)
   = Parser (\ s -> do
-               e <- gets (lookupEnv r . snd . head)
+               e <- asks (lookupEnv r . exprs . current)
                runParser (interpPExp e) s)
 
 -- modification API
 
+insPExp :: forall env a . String -> PExp env a -> PState env -> PState (env , a)
+insPExp s p ps = ps{syntaxes = Map.insert s p (syntaxes ps) }
+
+insertPExp :: String -> PExp env a -> Parser s (env , a) ()
+insertPExp s p = undefined
+
+modifyPExp :: String -> PExp env a -> Parser s env ()
+modifyPExp s p = undefined
