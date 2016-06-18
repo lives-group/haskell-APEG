@@ -7,7 +7,7 @@
 
 module Text.APEG.Semantics.Parser where
 
-import Prelude hiding (return, fmap, (>>=), (>>))
+import Prelude hiding (return, fmap, (>>=), (>>), guard,pure, (<$), (<*>))
 
 import Data.Singletons.Prelude
 
@@ -95,3 +95,57 @@ pure = ireturn
 
 (<$>) :: (a -> b) -> Parser s env env' a -> Parser s env env' b
 (<$>) = imap
+
+(<|>) :: Parser s env env' a -> Parser s env env' a -> Parser s env env' a
+p <|> q = Parser (\ s env ->
+                   case runParser p s env of
+                     Fail _ False -> runParser q s env
+                     x            -> x)
+
+empty :: Parser s env env a
+empty = Parser (\ _ _ -> Fail "empty" False)
+
+guard :: Bool -> Parser s env env ()
+guard True = pure ()
+guard False = empty
+
+(<$) :: a -> Parser s env env' b -> Parser s env env' a
+(<$) = imap . const
+
+replicateM :: Int -> Parser s env env a -> Parser s env env [a]
+replicateM 0 _ = ireturn []
+replicateM n m
+  = do
+      x <- m
+      xs <- replicateM (n - 1) m
+      return (x : xs)
+
+-- some simple parsers
+
+try :: Parser s env env' a -> Parser s env env' a
+try p = Parser (\s env ->
+                 case runParser p s env of
+                   Fail s _ -> Fail s False
+                   x -> x)
+
+satsem :: Stream c => (Char -> Bool) -> Parser c env env Char
+satsem p = try $ do
+           x <- anyChar
+           x <$ guard (p x)     
+
+char :: Stream c => Char -> Parser c env env Char
+char c = satsem (c ==)
+
+         
+string :: Stream c => String -> Parser c env env String
+string s = do
+            s' <- replicateM (length s) anyChar
+            s <$ guard (s == s')
+
+-- monadic state interface
+
+iget :: Parser s env env (Sing env)
+iget = Parser (\ _ env -> Pure (env,env))
+
+iput :: Sing env' -> Parser s env env' ()
+iput env' = Parser (\_ _ -> Pure ((), env'))
