@@ -1,92 +1,51 @@
-{-# LANGUAGE GADTs, 
-             DeriveFunctor#-}
+{-# LANGUAGE GADTs,
+             TypeFamilies,
+             KindSignatures,
+             TypeOperators,
+             DataKinds,
+             RankNTypes,
+             FlexibleInstances,
+             DeriveFunctor #-}
 
 module Text.APEG.Syntax.APEGSyn where
 
+
 import Control.Applicative
+import Control.Monad (replicateM, guard)
 
 import Data.Singletons.Prelude
-       
-import Data.Char    
+import Data.Singletons.Prelude.List
 
+import Data.Char
+
+import GHC.TypeLits
 
 -- deep  embedding of parser expressions
 
--- 1. typed non-terminals
+data PExp (env :: [Symbol]) (tys :: [*]) :: * -> * where
+  Term :: String -> PExp env tys String
+  NonTerm :: ( Length env ~ Length tys
+             , ElemIndex s env ~ 'Just n
+             , KnownSymbol s
+             , (tys :!! n) ~ t) => Sing s -> PExp env tys t
+  Cat :: PExp env tys (a -> b) -> PExp env tys a -> PExp env tys b
+  Choice :: PExp env tys a -> PExp env tys a -> PExp env tys a
+  Neg :: PExp env tys a -> PExp env tys ()
+  Star :: PExp env tys a -> PExp env tys [a]
+  Success :: a -> PExp env tys a
+  Failure ::  String -> PExp env tys a
+  Map :: (a -> b) -> PExp env tys a -> PExp env tys b
+  Bind :: PExp env tys a -> (a -> PExp env' tys' b) -> PExp env' tys' b
 
-data In s env where
-  Here  :: In s (env , s)
-  There :: In s env -> In s (env, s')
 
--- 2. weakening of symbols
-
-wk :: Sym env s -> Sym (env , a) s
-wk (NonTerm p) = NonTerm (There p)
-wk (Term s)    = Term s
-
--- 3. symbols
-
-data Sym env s where
-  Term    :: String -> Sym env String
-  NonTerm :: In s env -> Sym env s
-
--- 4. parser expressions
-
-data PExp env a where
-  Symb :: Sym env a -> PExp env a
-  Cat :: PExp env (a -> b) -> PExp env a -> PExp env b
-  Choice :: PExp env a -> PExp env a -> PExp env a
-  Neg :: PExp env a -> PExp env ()
-  Star :: PExp env a -> PExp env [a]
-  Map :: (a -> b) -> PExp env a -> PExp env b
-  Bind :: PExp env a -> (a -> PExp env b) -> PExp env b
-  Success :: a -> PExp env a
-  Error :: String -> PExp env a
-
--- weakening of parser expressions
-
-weak :: PExp env a -> PExp (env, b) a
-weak (Symb s) = Symb (wk s)
-weak (Cat e e') = Cat (weak e) (weak e')
-weak (Choice e e') = Choice (weak e) (weak e')
-weak (Neg e) = Neg (weak e)
-weak (Star e) = Star (weak e)
-weak (Map f e) = Map f (weak e)
-weak (Bind e f) = Bind (weak e) (\ a -> weak (f a))
-weak (Success a) = Success a
-weak (Error s) = Error s
-
--- definition of a parser expression grammar
-
-data PEG env a = PEG {
-                   start :: In a env
-                 , exprs :: Env PExp env env
-                 }           
-
--- environment and its lookup function
-
-data Env t u d where
-  Empty :: Env t u ()
-  Ext   :: Env t u d' -> t u a -> Env t u (d' , a)
-
-lookupEnv :: In a env -> Env t u env -> t u a
-lookupEnv Here (Ext _ t) = t
-lookupEnv (There p) (Ext ts _) = lookupEnv p ts
-  
--- some instances
-
-instance Functor (PExp env) where
+instance  Functor (PExp env tys) where
   fmap = Map
 
-instance Applicative (PExp env) where
+instance  Applicative (PExp env tys) where
   pure = Success
   (<*>) = Cat
 
-instance Alternative (PExp env) where
-  empty = Error "empty"
-  (<|>) = Choice
-
-instance Monad (PExp env) where
+instance  Monad (PExp env tys) where
   return = Success
   (>>=) = Bind
-  fail = Error
+  fail = Failure
