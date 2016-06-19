@@ -3,6 +3,7 @@
             ScopedTypeVariables,
             RankNTypes,
             DataKinds,
+            PolyKinds,
             TypeOperators,
             KindSignatures,
             RebindableSyntax,
@@ -26,13 +27,17 @@ import GHC.TypeLits
 import Text.APEG.Syntax.APEGSyn
 import Text.APEG.Semantics.Parser
 
+{-
 
-compile :: Stream s => PExp env tys a -> Parser s (Zip env tys) (Zip env tys) a
-compile (Term s)
-  = string s
-compile (NonTerm s)
+data Ex4 (p :: k -> k' -> k'' -> k''' ->  *) where
+  Ex4 :: p a b c d -> Ex4 p
+
+compile :: Ex2 PExp -> Ex4 Parser
+compile (Ex2 (Term s))
+  = Ex4 (string s)
+compile (Ex2 (NonTerm s))
   = do
       env <- iget
-      compile (sLookup s env)
-                          
-
+      compile (lookupEnv s env)
+        
+-}

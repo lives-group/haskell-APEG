@@ -2,6 +2,8 @@
              KindSignatures,
              PolyKinds, 
              DataKinds,
+             GADTs,
+             TypeOperators,
              RebindableSyntax,
              DeriveFunctor #-}
 
@@ -10,7 +12,8 @@ module Text.APEG.Semantics.Parser where
 import Prelude hiding (return, fmap, (>>=), (>>), guard,pure, (<$), (<*>))
 
 import Data.Singletons.Prelude
-
+import Data.Singletons.Prelude.List
+import Text.APEG.Syntax.APEGSyn
 import Text.APEG.Utils.Indexed
 
 -- definition of parsing results
@@ -34,10 +37,10 @@ instance Stream String where
                 (x:xs) -> Commit xs (x, env)
                 []     -> Fail "EOF"  False
 
--- parser data type                
+-- parser data type
 
-newtype Parser (s :: *) (env :: [(Symbol,*)]) (env' :: [(Symbol,*)]) (a :: *)
-        = Parser { runParser :: s -> Sing env -> Result s (a, Sing env') }
+data Parser (s :: *) (env :: [(Symbol,*)]) (env' :: [(Symbol,*)]) (a :: *)
+        = Parser { runParser :: s -> PEG env -> Result s (a, PEG env') }
 
 -- some parsing instances
 
@@ -144,8 +147,8 @@ string s = do
 
 -- monadic state interface
 
-iget :: Parser s env env (Sing env)
-iget = Parser (\ _ env -> Pure (env,env))
+iget :: Parser s env env (PEG env)
+iget = Parser (\_ env -> Pure (env,env))
 
-iput :: Sing env' -> Parser s env env' ()
-iput env' = Parser (\_ _ -> Pure ((), env'))
+iput :: (Stream s, Lookup s' env ~ 'Nothing) => Sing s' -> PExp ('(s',a) ': env) a -> Parser s env ('(s',a) ': env) ()
+iput s p = Parser (\_ env -> Pure ((), Cons (s,p) env))

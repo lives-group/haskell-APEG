@@ -3,6 +3,7 @@
              KindSignatures,
              TypeOperators,
              DataKinds,
+             PolyKinds,
              RankNTypes,
              FlexibleInstances,
              DeriveFunctor #-}
@@ -22,30 +23,48 @@ import GHC.TypeLits
 
 -- deep  embedding of parser expressions
 
-data PExp (env :: [Symbol]) (tys :: [*]) :: * -> * where
-  Term :: String -> PExp env tys String
-  NonTerm :: ( Length env ~ Length tys
-             , ElemIndex s env ~ 'Just n
-             , KnownSymbol s
-             , (tys :!! n) ~ t) => Sing s -> PExp env tys t
-  Cat :: PExp env tys (a -> b) -> PExp env tys a -> PExp env tys b
-  Choice :: PExp env tys a -> PExp env tys a -> PExp env tys a
-  Neg :: PExp env tys a -> PExp env tys ()
-  Star :: PExp env tys a -> PExp env tys [a]
-  Success :: a -> PExp env tys a
-  Failure ::  String -> PExp env tys a
-  Map :: (a -> b) -> PExp env tys a -> PExp env tys b
-  Bind :: PExp env tys a -> (a -> PExp env' tys' b) -> PExp env' tys' b
+data PExp (env :: [(Symbol,*)]) :: * -> * where
+  Term :: String -> PExp env String
+  NonTerm :: (Lookup s env ~ 'Just t) => Sing s -> PExp env t
+  Cat :: PExp env (a -> b) -> PExp env a -> PExp env b
+  Choice :: PExp env a -> PExp env a -> PExp env a
+  Neg :: PExp env a -> PExp env ()
+  Star :: PExp env a -> PExp env [a]
+  Success :: a -> PExp env a
+  Failure ::  String -> PExp env a
+  Map :: (a -> b) -> PExp env a -> PExp env b
+  Bind :: PExp env a -> (a -> PExp env' b) -> PExp env' b
 
 
-instance  Functor (PExp env tys) where
+data PEG (env :: [(Symbol,*)]) where
+  Nil  :: PEG '[]
+  Cons :: (Lookup s' env ~ 'Nothing) =>
+          (Sing s' ,
+           PExp ('(s', a) ': env) a) ->
+          PEG env ->
+          PEG ('( s',a) ': env)
+
+data Ex2 (p :: k -> k' -> *) where
+  Ex2 :: p e i -> Ex2 p
+
+lookupEnv :: Lookup s env ~ 'Just t => Sing s -> PEG env -> Ex2 PExp
+lookupEnv s (Cons (s',e) env)
+  = case s %:== s' of
+       STrue -> Ex2 e
+       SFalse -> lookupEnv s env
+
+instance  Functor (PExp env) where
   fmap = Map
 
-instance  Applicative (PExp env tys) where
+instance  Applicative (PExp env) where
   pure = Success
   (<*>) = Cat
 
-instance  Monad (PExp env tys) where
+instance Alternative (PExp env) where
+  empty = Failure "empty"
+  (<|>) = Choice
+
+instance  Monad (PExp env) where
   return = Success
   (>>=) = Bind
   fail = Failure
