@@ -16,9 +16,6 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:       Text.APEG.Syntax.APEGSyn
-                       , Text.APEG.Semantics.Parser
-                       , Text.APEG.Semantics.APEGSem
-                       , Text.APEG.Utils.Indexed
   build-depends:         base >= 4.7 && < 5
                        , singletons
                        , indexed

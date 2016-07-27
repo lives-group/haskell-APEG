@@ -1,70 +1,87 @@
-{-# LANGUAGE GADTs,
-             TypeFamilies,
-             KindSignatures,
-             TypeOperators,
-             DataKinds,
-             PolyKinds,
-             RankNTypes,
-             FlexibleInstances,
-             DeriveFunctor #-}
+{-# LANGUAGE KindSignatures            #-}
+{-# LANGUAGE DataKinds                 #-}
+{-# LANGUAGE GADTs                     #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE TypeOperators             #-}
+{-# LANGUAGE UndecidableInstances      #-}
+{-# LANGUAGE PolyKinds                 #-}
 
 module Text.APEG.Syntax.APEGSyn where
 
-
 import Control.Applicative
-import Control.Monad (replicateM, guard)
-
-import Data.Singletons.Prelude
-import Data.Singletons.Prelude.List
-
-import Data.Char
 
 import GHC.TypeLits
 
--- deep  embedding of parser expressions
+-- membership proof building
 
-data PExp (env :: [(Symbol,*)]) :: * -> * where
-  Term :: String -> PExp env String
-  NonTerm :: (Lookup s env ~ 'Just t) => Sing s -> PExp env t
-  Cat :: PExp env (a -> b) -> PExp env a -> PExp env b
-  Choice :: PExp env a -> PExp env a -> PExp env a
-  Neg :: PExp env a -> PExp env ()
-  Star :: PExp env a -> PExp env [a]
-  Success :: a -> PExp env a
-  Failure ::  String -> PExp env a
-  Map :: (a -> b) -> PExp env a -> PExp env b
-  Bind :: PExp env a -> (a -> PExp env' b) -> PExp env' b
+type family HasSymbol (g :: [(Symbol,*)]) (s :: Symbol) :: Maybe * where
+  HasSymbol '[]            s = 'Nothing
+  HasSymbol ('(s, a) ': g) s = 'Just a
+  HasSymbol ('(t, a) ': g) s = HasSymbol g s
+
+-- proxies for names
+
+data Name (s :: Symbol) = Var
+data Type (a :: *) = Of
+
+-- definition of a variable
+
+data ScopedSymbol (g :: [(Symbol,*)]) (a :: *)
+  = forall s.
+      (HasSymbol g s ~ 'Just a) => The (Name s)
+
+-- definition of parsing expressions
+
+data PExp (g :: [(Symbol,*)]) (a :: *) where
+  ESymb :: String -> PExp g String
+  EVar :: ScopedSymbol g a -> PExp g a
+  ECat  :: PExp g (a -> b) -> PExp g a -> PExp g b
+  EChoice :: PExp g a -> PExp g a -> PExp g a
+  ENeg :: PExp g a -> PExp g ()
+  EStar :: PExp g a -> PExp g [a]
+  EMap :: (a -> b) -> PExp g a -> PExp g b
+  EPure :: a -> PExp g a
+  EFail :: PExp g a
+  EBind :: PExp g a -> (a -> PExp g b) -> PExp g b
+    
+-- instances for PExp
+
+instance Functor (PExp g) where
+  fmap = EMap
+
+instance Applicative (PExp g) where
+  pure = EPure
+  (<*>) = ECat
+
+instance Alternative (PExp g) where
+  empty = EFail
+  (<|>) = EChoice
+
+instance Monad (PExp g) where
+  return = EPure
+  (>>=) = EBind
+  fail _ = EFail
 
 
-data PEG (env :: [(Symbol,*)]) where
-  Nil  :: PEG '[]
-  Cons :: (Lookup s' env ~ 'Nothing) =>
-          (Sing s' ,
-           PExp ('(s', a) ': env) a) ->
-          PEG env ->
-          PEG ('( s',a) ': env)
+-- definition of adaptable parsing expressions
 
-data Ex2 (p :: k -> k' -> *) where
-  Ex2 :: p e i -> Ex2 p
+infixr 5 :>
 
-lookupEnv :: Lookup s env ~ 'Just t => Sing s -> PEG env -> Ex2 PExp
-lookupEnv s (Cons (s',e) env)
-  = case s %:== s' of
-       STrue -> Ex2 e
-       SFalse -> lookupEnv s env
+data APExp (g :: [(Symbol,*)])(h :: [(Symbol,*)])(a :: *) where
+  ADone :: APExp g g a -- ending a composite expression
+  APExp :: PExp g a -> APExp g g a -- just a pexp
+  ARule :: HasSymbol g s ~ 'Just a  => -- add a rule in a specific non terminal.
+           Name s -> PExp g a -> APExp g g ()  
+  ASymb :: HasSymbol g s ~ 'Nothing =>   -- add a new non-terminal
+           Name s -> Type a -> PExp g a -> APExp g ( '(s,a) ': g) a
+  (:>)  :: APExp g h (a -> b) -> APExp h i a -> APExp g i b -- composition
 
-instance  Functor (PExp env) where
-  fmap = Map
 
-instance  Applicative (PExp env) where
-  pure = Success
-  (<*>) = Cat
+-- a grammar is just is starting rule
 
-instance Alternative (PExp env) where
-  empty = Failure "empty"
-  (<|>) = Choice
-
-instance  Monad (PExp env) where
-  return = Success
-  (>>=) = Bind
-  fail = Failure
+data APEG (s :: Symbol) (a :: *)
+    = forall h. HasSymbol h s ~ 'Just a =>
+                 APEG { start :: Name s
+                      , prods :: [ (Symbol, APExp '[] h a) ]
+                      }
